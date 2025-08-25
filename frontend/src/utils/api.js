@@ -2,7 +2,7 @@ import axios from 'axios'
 import Cookies from 'js-cookie'
 import toast from 'react-hot-toast'
 
-const API_BASE_URL =  'https://elite-store-backend.vercel.app/api'
+const API_BASE_URL =  'https://elite-store-omega.vercel.app/api'
 
 // Create axios instance
 const api = axios.create({
