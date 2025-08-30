@@ -23,11 +23,36 @@ const app = express();
 app.use(helmet());
 app.use(compression());
 
-// Rate limiting
+// ------------ Rate limiting & IP blocking -------------
+// In-memory blocklist: ip => unblockTimestamp
+const blockedIPs = new Map();
+
+// Middleware to reject requests from blocked IPs
+app.use((req, res, next) => {
+  const unblockAt = blockedIPs.get(req.ip);
+  if (unblockAt && Date.now() < unblockAt) {
+    return res.status(429).json({
+      success: false,
+      message: 'Your IP has been temporarily blocked due to excessive requests. Please try again later.'
+    });
+  }
+  // Clean up expired block entries
+  if (unblockAt && Date.now() >= unblockAt) {
+    blockedIPs.delete(req.ip);
+  }
+  next();
+});
+
 const limiter = rateLimit({
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false,  // Disable the deprecated `X-RateLimit-*` headers
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  message: 'Too many requests from this IP, please try again later.',
+  onLimitReached: (req, res, options) => {
+    const blockDuration = parseInt(process.env.IP_BLOCK_TIME_MS) || 30 * 60 * 1000; // 30 minutes
+    blockedIPs.set(req.ip, Date.now() + blockDuration);
+  }
 });
 app.use('/api/', limiter);
 
