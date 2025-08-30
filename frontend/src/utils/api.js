@@ -5,6 +5,9 @@ import toast from 'react-hot-toast'
 const API_BASE_URL =  'https://elite-store-omega.vercel.app/api'
 
 // Create axios instance
+// Track rate limit state
+let rateLimitResetAt = 0;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
@@ -28,6 +31,13 @@ api.interceptors.request.use(
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    // If client is currently rate-limited, block outgoing requests until reset time
+    if (Date.now() < rateLimitResetAt) {
+      return Promise.reject({
+        isRateLimit: true,
+        message: 'You are temporarily blocked due to too many requests. Please wait and try again.'
+      })
     }
     return config
   },
@@ -53,6 +63,21 @@ api.interceptors.response.use(
         window.location.href = '/login'
         toast.error('Session expired. Please login again.')
       }
+      } else if (error.response?.status === 429) {
+      // Handle rate limit
+      const retryAfterHeader = error.response.headers['retry-after'] || error.response.headers['ratelimit-reset']
+      let retryAfterMs = 0
+      if (retryAfterHeader) {
+        // retry-after may be seconds or HTTP-date. Assume seconds if numeric.
+        const seconds = parseInt(retryAfterHeader)
+        if (!isNaN(seconds)) {
+          retryAfterMs = seconds * 1000
+        }
+      }
+      // Default to 1 minute if header missing
+      if (!retryAfterMs) retryAfterMs = 60 * 1000
+      rateLimitResetAt = Date.now() + retryAfterMs
+      toast.error('Too many requests. Please wait a moment and try again.')
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.')
     } else if (error.response?.status === 403) {
